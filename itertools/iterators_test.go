@@ -291,3 +291,11 @@ func TestDropWhile(t *testing.T) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
 }
+
+func TestChunked(t *testing.T) {
+	want := [][]int{{1, 2, 3}, {4, 5, 6}, {7}}
+	got := ToSlice(Chunked(Literal(1, 2, 3, 4, 5, 6, 7), 3))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}

@@ -1,7 +1,6 @@
 package itertools
 
 import (
-	"constraints"
 	"github.com/edwingeng/deque"
 )
 
@@ -622,7 +621,7 @@ func GroupByKey[T any, K any](iter Iterator[T], key Key[T, K]) Iterator[Group[T,
 	return &IteratorClosure[Group[T, K]]{next: next, value: value}
 }
 
-func GroupByValue[T constraints.Ordered](iter Iterator[T]) Iterator[Group[T, T]] {
+func GroupByValue[T comparable](iter Iterator[T]) Iterator[Group[T, T]] {
 	return GroupByKey(
 		iter,
 		MakeKey(Identity[T], IsSameValue[T]),
@@ -633,11 +632,11 @@ func Identity[T any](t T) T {
 	return t
 }
 
-func IsSameValue[T constraints.Ordered](a, b T) bool {
-	return a <= b && a >= b
+func IsSameValue[T comparable](a, b T) bool {
+	return a == b
 }
 
-func AllEqualValue[T constraints.Ordered](iter Iterator[T]) bool {
+func AllEqualValue[T comparable](iter Iterator[T]) bool {
 	groupBy := GroupByValue(iter)
 	groupBy.Next()
 	return !groupBy.Next()
@@ -719,63 +718,21 @@ func DropWhile[T any](predicate func(T) bool, iter Iterator[T]) Iterator[T] {
 	return IteratorClosure[T]{next: next, value: iter.Value}
 }
 
-func LessThan[T constraints.Ordered](value T) Predicate[T] {
-	return func(other T) bool {
-		return other < value
-	}
+func FromCallable[T any](f func() T) Iterator[T] {
+	return ClosureFromSingle(func() (bool, T) {
+		return true, f()
+	})
+}
+func FromCallableWhile[T any](f func() T, predicate Predicate[T]) Iterator[T] {
+	return TakeWhile(predicate, FromCallable(f))
 }
 
-func GreaterThan[T constraints.Ordered](value T) Predicate[T] {
-	return func(other T) bool {
-		return other > value
-	}
+func FromCallableUntil[T any](f func() T, predicate Predicate[T]) Iterator[T] {
+	return TakeWhile(Not(predicate), FromCallable(f))
 }
 
-func EqualTo[T constraints.Ordered](value T) Predicate[T] {
-	return func(other T) bool {
-		return other == value
-	}
-}
-
-type Predicate[T any] func(T) bool
-
-func Or[T any](predicateA Predicate[T], predicateB Predicate[T]) Predicate[T] {
-	return func(value T) bool {
-		return predicateA(value) || predicateB(value)
-	}
-}
-
-func And[T any](a, b Predicate[T]) Predicate[T] {
-	return func(value T) bool {
-		return a(value) && b(value)
-	}
-}
-
-func All[T any](preds ...Predicate[T]) Predicate[T] {
-	return func(value T) bool {
-		for _, pred := range preds {
-			if !pred(value) {
-				return false
-			}
-		}
-		return true
-	}
-}
-func Any[T any](preds ...Predicate[T]) Predicate[T] {
-	return func(value T) bool {
-		for _, pred := range preds {
-			if pred(value) {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-func Not[T any](predicate Predicate[T]) Predicate[T] {
-	return func(value T) bool {
-		return !predicate(value)
-	}
+func Chunked[T any](iter Iterator[T], n int) Iterator[[]T] {
+	return FromCallableWhile(func() []T { return ToSlice(Take(n, iter)) }, SliceNotEmpty[T])
 }
 
 /*
