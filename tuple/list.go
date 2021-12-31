@@ -1,26 +1,42 @@
 package tuple
 
-type List[A any, B any] interface {
-	First() A
-	Second() B
-}
+import "fmt"
 
 type End struct{}
 
-type list[First any, Second any] struct {
+type List[First any, Second any] struct {
 	first  First
 	second Second
 }
 
-func (l list[F, S]) First() F {
+func (l List[F, S]) First() F {
 	return l.first
 }
-func (l list[F, S]) Second() S {
+func (l List[F, S]) Second() S {
 	return l.second
 }
 
+type pretty[F, S any] List[F, S]
+
+func Pretty[F, S any](l List[F, S]) pretty[F, S] {
+	return pretty[F, S](l)
+}
+
+func (l List[F, S]) String() string {
+	_, ok := any(l.Second()).(End)
+	if ok {
+		return fmt.Sprint(l.First())
+	} else {
+		return fmt.Sprintf("%v, %v", l.First(), l.Second())
+	}
+}
+
+func (p pretty[F, S]) String() string {
+	return fmt.Sprintf("<< %v >>", List[F, S](p))
+}
+
 func MakeList[First any, Second any](first First, second Second) List[First, Second] {
-	return list[First, Second]{first, second}
+	return List[First, Second]{first, second}
 }
 
 func Get0[A, B any](l List[A, B]) A {
