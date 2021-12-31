@@ -18,7 +18,7 @@ func (l List[F, S]) Second() S {
 
 type pretty[F, S any] List[F, S]
 
-func Pretty[F, S any](l List[F, S]) pretty[F, S] {
+func Pretty[F, S any](l List[F, S]) fmt.Stringer {
 	return pretty[F, S](l)
 }
 
