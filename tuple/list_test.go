@@ -2,6 +2,7 @@ package tuple
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -14,4 +15,5 @@ func TestList(t *testing.T) {
 	fmt.Println(Get3(p))
 	fmt.Println(Get4(p))
 	fmt.Println(Get5(p))
+	fmt.Println(reflect.TypeOf(p))
 }
