@@ -760,6 +760,45 @@ func ForEach[T any](iter Iterator[T], f func(T)) {
 	}
 }
 
+func RoundRobin[T any](iterators ...Iterator[T]) Iterator[T] {
+	indices := Cycle(IntRange(len(iterators)))
+	active := ToSlice(Take(len(iterators), Repeat(true)))
+	activeCount := len(iterators)
+	advance := func() (bool, T) {
+		for indices.Next() && activeCount > 0 {
+			index := indices.Value()
+			if active[index] {
+				if !iterators[index].Next() {
+					active[index] = false
+					activeCount--
+				} else {
+					return true, iterators[index].Value()
+				}
+			}
+		}
+		var zero T
+		return false, zero
+	}
+	return ClosureFromSingle(advance)
+}
+
+func Interleave[T any](iterators ...Iterator[T]) Iterator[[]T] {
+	size := len(iterators)
+	slice := make([]T, size)
+
+	advance := func() (bool, []T) {
+		for i, iter := range iterators {
+			if !iter.Next() {
+				return false, nil
+			}
+			slice[i] = iter.Value()
+		}
+		return true, slice
+	}
+
+	return ClosureFromSingle(advance)
+}
+
 /*
 Play with things like getting back Len, copying underlying slice directly, avoiding copying out values,
 incrementing without value calculation...
