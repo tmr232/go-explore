@@ -212,7 +212,7 @@ func TestGroupByKey(t *testing.T) {
 	want := []int{1, 2, 3}
 	got := ToSlice(
 		Map(
-			func(g Group[int, int]) int { return ILen(g.iter) },
+			func(g Group[int, int]) int { return len(g.slice) },
 			GroupByKey(
 				Literal(1, 2, 2, 3, 3, 3),
 				MakeKey(
@@ -230,7 +230,7 @@ func TestGroupByValue(t *testing.T) {
 	want := []int{1, 2, 3}
 	got := ToSlice(
 		Map(
-			func(g Group[int, int]) int { return ILen(g.iter) },
+			func(g Group[int, int]) int { return len(g.slice) },
 			GroupByValue(
 				Literal(1, 2, 2, 3, 3, 3),
 			),
@@ -295,6 +295,14 @@ func TestDropWhile(t *testing.T) {
 func TestChunked(t *testing.T) {
 	want := [][]int{{1, 2, 3}, {4, 5, 6}, {7}}
 	got := ToSlice(Chunked(Literal(1, 2, 3, 4, 5, 6, 7), 3))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
+func TestChunkBy(t *testing.T) {
+	want := [][]int{{1, 1, 1}, {2, 2}, {3}}
+	got := ToSlice(ChunkBy(Literal(1, 1, 1, 2, 2, 3), Identity[int]))
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %v, want %v", got, want)
 	}

@@ -187,6 +187,13 @@ type Pair[T any, U any] struct {
 	second U
 }
 
+func (p Pair[T, U]) First() T {
+	return p.first
+}
+func (p Pair[T, U]) Second() U {
+	return p.second
+}
+
 func PairToSlice[T any](pair Pair[T, T]) []T {
 	return []T{pair.first, pair.second}
 }
@@ -550,8 +557,8 @@ func ILen[T any](iter Iterator[T]) int {
 }
 
 type Group[T any, K any] struct {
-	iter Iterator[T]
-	key  K
+	slice []T
+	key   K
 }
 
 type Key[T any, K any] struct {
@@ -564,61 +571,46 @@ func MakeKey[T any, K any](key func(T) K, compare func(K, K) bool) Key[T, K] {
 }
 
 func GroupByKey[T any, K any](iter Iterator[T], key Key[T, K]) Iterator[Group[T, K]] {
-	var currentKey K
-	var targetKey K
-	var currentGrouper int
-	var currentValue T
-	isFirst := true
-	grouper := func(targetKey K, grouperId int) Iterator[T] {
-		doneIteration := false
-		next := func() bool {
-			if doneIteration || currentGrouper != grouperId || !key.equal(currentKey, targetKey) {
-				return false
-			}
-			if !iter.Next() {
-				doneIteration = true
-				return true
-			}
-			currentValue = iter.Value()
-			currentKey = key.create(currentValue)
-			return true
-		}
-		value := func() T {
-			return currentValue
-		}
-		return &IteratorClosure[T]{next: next, value: value}
+	if !iter.Next() {
+		return EmptyIterator[Group[T, K]]()
 	}
 
-	next := func() bool {
-		currentGrouper++
+	currentValue := iter.Value()
+	currentKey := key.create(currentValue)
+	dq := deque.NewDeque()
+	dq.PushBack(currentValue)
 
-		if isFirst {
-			isFirst = false
-
-			if !iter.Next() {
-				return false
-			}
-			currentValue = iter.Value()
-			currentKey = key.create(currentValue)
-			targetKey = currentKey
-			return true
+	fromDeque := func() (bool, Group[T, K]) {
+		if dq.Empty() {
+			var zero Group[T, K]
+			return false, zero
 		}
-
-		for key.equal(currentKey, targetKey) {
-			if !iter.Next() {
-				return false
-			}
-			currentValue = iter.Value()
-			currentKey = key.create(currentValue)
+		slice := make([]T, dq.Len())
+		for i, elem := range dq.DequeueMany(0) {
+			slice[i] = elem.(T)
 		}
-		targetKey = currentKey
-		return true
-	}
-	value := func() Group[T, K] {
-		return Group[T, K]{iter: grouper(targetKey, currentGrouper), key: currentKey}
+		return true, Group[T, K]{slice, currentKey}
 	}
 
-	return &IteratorClosure[Group[T, K]]{next: next, value: value}
+	advance := func() (bool, Group[T, K]) {
+		for iter.Next() {
+			newValue := iter.Value()
+			newKey := key.create(newValue)
+			if key.equal(newKey, currentKey) {
+				dq.PushBack(newValue)
+				currentKey = newKey
+			} else {
+				next, group := fromDeque()
+				currentKey = newKey
+				dq.PushBack(newValue)
+				return next, group
+			}
+		}
+		return fromDeque()
+	}
+
+	return ClosureFromSingle(advance)
+
 }
 
 func GroupByValue[T comparable](iter Iterator[T]) Iterator[Group[T, T]] {
@@ -626,6 +618,10 @@ func GroupByValue[T comparable](iter Iterator[T]) Iterator[Group[T, T]] {
 		iter,
 		MakeKey(Identity[T], IsSameValue[T]),
 	)
+}
+
+func GroupByFunc[T any, K comparable](iter Iterator[T], key func(T) K) Iterator[Group[T, K]] {
+	return GroupByKey(iter, MakeKey(key, IsSameValue[K]))
 }
 
 func Identity[T any](t T) T {
@@ -733,6 +729,35 @@ func FromCallableUntil[T any](f func() T, predicate Predicate[T]) Iterator[T] {
 
 func Chunked[T any](iter Iterator[T], n int) Iterator[[]T] {
 	return FromCallableWhile(func() []T { return ToSlice(Take(n, iter)) }, SliceNotEmpty[T])
+}
+
+func PairAdaptor[T any, R any](f func(T, T) R) func(Pair[T, T]) R {
+	return func(p Pair[T, T]) R {
+		return f(p.first, p.second)
+	}
+}
+
+func ChunkBy[T any, K comparable](iter Iterator[T], key func(T) K) Iterator[[]T] {
+	return Map(
+		func(g Group[T, K]) []T {
+			return g.slice
+		},
+		GroupByFunc(iter, key),
+	)
+}
+
+func EnumerateFrom[T any](iter Iterator[T], start int) Iterator[Pair[int, T]] {
+	return Zip(Count(start), iter)
+}
+
+func Enumerate[T any](iter Iterator[T]) Iterator[Pair[int, T]] {
+	return EnumerateFrom(iter, 0)
+}
+
+func ForEach[T any](iter Iterator[T], f func(T)) {
+	for iter.Next() {
+		f(iter.Value())
+	}
 }
 
 /*
