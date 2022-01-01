@@ -76,20 +76,6 @@ func layoutMonths(months itertools.Iterator[[]time.Time]) itertools.Iterator[ite
 	)
 }
 
-func main() {
-	var startYear int
-	var stop int
-	var perLine int
-
-	flag.IntVar(&startYear, "start", time.Now().Year(), "Year to start")
-	flag.IntVar(&stop, "stop", time.Now().Year()+1, "Year to stop")
-	flag.IntVar(&perLine, "per-line", 3, "Number months per line")
-
-	flag.Parse()
-
-	printCalendar(startYear, stop, perLine)
-}
-
 func printCalendar(startYear, stopYear, perLine int) {
 	months := layoutMonths(byMonth(dates(startYear, stopYear)))
 	lines := itertools.Chunked(months, perLine)
@@ -102,4 +88,18 @@ func printCalendar(startYear, stopYear, perLine int) {
 			fmt.Println()
 		}
 	}
+}
+
+func main() {
+	var startYear int
+	var stop int
+	var perLine int
+
+	flag.IntVar(&startYear, "start", time.Now().Year(), "Year to start")
+	flag.IntVar(&stop, "stop", time.Now().Year()+1, "Year to stop")
+	flag.IntVar(&perLine, "per-line", 3, "Number months per line")
+
+	flag.Parse()
+
+	printCalendar(startYear, stop, perLine)
 }
