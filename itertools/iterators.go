@@ -798,6 +798,25 @@ func Interleave[T any](iterators ...Iterator[T]) Iterator[[]T] {
 
 	return ClosureFromSingle(advance)
 }
+func InterleaveLongest[T any](filler T, iterators ...Iterator[T]) Iterator[[]T] {
+	size := len(iterators)
+	slice := make([]T, size)
+
+	advance := func() (bool, []T) {
+		hasValues := false
+		for i, iter := range iterators {
+			if iter.Next() {
+				slice[i] = iter.Value()
+				hasValues = true
+			} else {
+				slice[i] = filler
+			}
+		}
+		return hasValues, slice
+	}
+
+	return ClosureFromSingle(advance)
+}
 
 /*
 Play with things like getting back Len, copying underlying slice directly, avoiding copying out values,
