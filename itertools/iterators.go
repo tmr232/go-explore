@@ -1,7 +1,6 @@
 package itertools
 
 import (
-	"constraints"
 	"github.com/edwingeng/deque"
 )
 
