@@ -844,6 +844,7 @@ func InterleaveFlat[T any](iterators ...Iterator[T]) Iterator[T] {
 
 	return FromAdvance(advance)
 }
+
 func Interleave[T any](iterators ...Iterator[T]) Iterator[[]T] {
 	size := len(iterators)
 	slice := make([]T, size)
