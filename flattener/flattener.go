@@ -56,15 +56,13 @@ func (flt *Flattener) generateStateSwitch() string {
 func (flt *Flattener) flatten(node ast.Node) string {
 	switch node.(type) {
 	case *ast.ReturnStmt:
-		builder := strings.Builder{}
-		setter, label := flt.setNext()
-		builder.WriteString(setter)
-		builder.WriteString("\n")
-		builder.WriteString(flt.render(node))
-		builder.WriteString("\n")
-		builder.WriteString(label)
-		builder.WriteString("\n__nop()\n")
-		return builder.String()
+		stateId := flt.getStateId()
+		results := node.(*ast.ReturnStmt).Results
+		if results == nil || len(results) != 1 {
+			panic("Only supports a single result!")
+		}
+		returnValue := flt.render(results[0])
+		return renderReturn(stateId, returnValue)
 	case *ast.BlockStmt:
 		builder := strings.Builder{}
 		for _, stmt := range node.(*ast.BlockStmt).List {
@@ -76,26 +74,12 @@ func (flt *Flattener) flatten(node ast.Node) string {
 }
 
 func (flt *Flattener) FlattenFunction(fd *ast.FuncDecl) string {
-	builder := strings.Builder{}
 
-	builder.WriteString(flt.render(fd.Type))
-	builder.WriteString("{\n")
-	builder.WriteString("__nop = func() {}\n")
-	builder.WriteString("iterator = func() Iterator[int]")
-	builder.WriteString(flt.flatten(fd.Body))
-	builder.WriteString("}\n")
+	_, name, _ := strings.Cut(fd.Name.Name, "_")
 
-	return builder.String()
-}
+	body := flt.flatten(fd.Body)
 
-func (flt *Flattener) printFlattenedIfs(n ast.Node) ast.Visitor {
-	fd, ok := n.(*ast.FuncDecl)
-	if ok {
-		fmt.Println("====================================")
-		fmt.Println(flt.FlattenFunction(fd))
-		return nil
-	}
-	return visitFunc(flt.printFlattenedIfs)
+	return renderFunction(name, body, flt.stateId)
 }
 
 func collectFuncDecls(node ast.Node, recurse bool) []*ast.FuncDecl {
@@ -130,7 +114,7 @@ func main() {
 	src := `
 package src
 
-func f() int {
+func generate_MyGen() int {
 	return 1
 	return 2
 	return 3
@@ -156,6 +140,11 @@ func f() int {
 
 	funcDecls := collectFuncDecls(af, false)
 
-	flt := Flattener{fset: fset}
-	fmt.Println(flt.FlattenFunction(funcDecls[0]))
+	for _, decl := range funcDecls {
+		if strings.HasPrefix(decl.Name.Name, "generate_") {
+			flt := Flattener{fset: fset}
+			fmt.Println(flt.FlattenFunction(decl))
+		}
+	}
+
 }

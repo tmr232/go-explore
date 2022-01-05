@@ -1,4 +1,4 @@
-package flattener
+package main
 
 import (
 	"bytes"
@@ -84,10 +84,6 @@ func f() {
 	flt := simpleFlattener{fset: fset}
 	ast.Walk(visitFunc(flt.printFlattenedIfs), af)
 }
-
-type visitFunc func(ast.Node) ast.Visitor
-
-func (f visitFunc) Visit(n ast.Node) ast.Visitor { return f(n) }
 
 func invertConditions(n ast.Node) ast.Visitor {
 	is, ok := n.(*ast.IfStmt)
@@ -221,28 +217,38 @@ func MyGen() itertools.Iterator[int] {
 	__nop := func() {}
 	advance := func() (bool, int) {
 		switch __next {
+
 		case 0:
 			goto __next_0
+
 		case 1:
 			goto __next_1
+
 		case 2:
 			goto __next_2
+
 		case 3:
 			goto __next_3
+
 		}
+
 	__next_0:
+
 		__next = 1
 		return true, 1
 	__next_1:
 		__nop()
+
 		__next = 2
 		return true, 2
 	__next_2:
 		__nop()
+
 		__next = 3
 		return true, 3
 	__next_3:
 		__nop()
+
 		return false, __zero
 	}
 	return itertools.FromAdvance(advance)
