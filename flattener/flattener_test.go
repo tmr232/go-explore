@@ -6,6 +6,12 @@ import (
 	"testing"
 )
 
+/*
+To Run:
+
+	go build .\flattener\generate\ ; go generate .\flattener\ ; goimports -w .\flattener\generators_gen.go ; go test .\flattener\
+*/
+
 //go:generate go run ./generate
 
 func generate_MyGen() int {
@@ -20,4 +26,30 @@ func TestMyGen(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
+}
+
+func generate_IfStmt(flag bool) int {
+	if flag {
+		return 1
+	} else {
+		return 2
+	}
+	return 3
+}
+
+func TestIfStmt(t *testing.T) {
+	t.Run("true", func(t *testing.T) {
+		want := []int{1, 3}
+		got := itertools.ToSlice(IfStmt(true))
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got = %v, want %v", got, want)
+		}
+	})
+	t.Run("false", func(t *testing.T) {
+		want := []int{2, 3}
+		got := itertools.ToSlice(IfStmt(false))
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got = %v, want %v", got, want)
+		}
+	})
 }
