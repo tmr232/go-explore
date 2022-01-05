@@ -20,7 +20,7 @@ func renderTemplate(textTemplate string, data any) string {
 }
 
 var functionTemplate = `
-func {{.Name}}() itertools.Iterator[int] {
+func {{.Name}}({{.Params}}) itertools.Iterator[int] {
 	__next := 0
 	var __zero int
 	__nop := func() {}
@@ -42,16 +42,16 @@ func {{.Name}}() itertools.Iterator[int] {
 }
 `
 
-func renderFunction(name, body string, stateCount int) string {
+func renderFunction(name, params, body string, stateCount int) string {
 	nextIndices := make([]int, stateCount+1)
 	for i := range nextIndices {
 		nextIndices[i] = i
 	}
 
 	return renderTemplate(functionTemplate, struct {
-		Name, Body  string
-		NextIndices []int
-	}{Name: name, Body: body, NextIndices: nextIndices})
+		Name, Params, Body string
+		NextIndices        []int
+	}{Name: name, Params: params, Body: body, NextIndices: nextIndices})
 }
 
 var returnTemplate = `

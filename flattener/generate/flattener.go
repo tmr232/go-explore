@@ -78,10 +78,14 @@ func (flt *Flattener) flatten(node ast.Node) string {
 func (flt *Flattener) FlattenFunction(fd *ast.FuncDecl) string {
 
 	_, name, _ := strings.Cut(fd.Name.Name, "_")
-
 	body := flt.flatten(fd.Body)
 
-	return renderFunction(name, body, flt.stateId)
+	// This is a terrible hack!
+	signature := flt.render(fd.Type)
+	_, after, _ := strings.Cut(signature, "(")
+	params, _, _ := strings.Cut(after, ")")
+
+	return renderFunction(name, params, body, flt.stateId)
 }
 
 func collectFuncDecls(node ast.Node, recurse bool) []*ast.FuncDecl {
