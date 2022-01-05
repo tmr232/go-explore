@@ -21,12 +21,18 @@ func (f visitFunc) Visit(n ast.Node) ast.Visitor { return f(n) }
 type Flattener struct {
 	fset    *token.FileSet
 	stateId int
+	labelId int
 }
 
 func (flt *Flattener) render(node ast.Node) string {
 	var out bytes.Buffer
 	format.Node(&out, flt.fset, node)
 	return out.String()
+}
+
+func (flt *Flattener) getLabelId() int {
+	flt.labelId++
+	return flt.labelId
 }
 
 func (flt *Flattener) getStateId() int {
@@ -71,6 +77,15 @@ func (flt *Flattener) flatten(node ast.Node) string {
 			builder.WriteString(flt.flatten(stmt))
 		}
 		return builder.String()
+	case *ast.IfStmt:
+		ifStmt := node.(*ast.IfStmt)
+		cond := flt.render(ifStmt.Cond)
+		thenLabel := fmt.Sprintf("__then_%d", flt.getLabelId())
+		elseLabel := fmt.Sprintf("__else_%d", flt.getLabelId())
+		postLabel := fmt.Sprintf("__post_%d", flt.getLabelId())
+		thenBody := flt.flatten(ifStmt.Body)
+		elseBody := flt.flatten(ifStmt.Else)
+		return renderIf(cond, thenLabel, thenBody, elseLabel, elseBody, postLabel)
 	}
 	return "// UNSUPPORTED\n"
 }
