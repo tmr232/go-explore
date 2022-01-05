@@ -53,3 +53,24 @@ func TestIfStmt(t *testing.T) {
 		}
 	})
 }
+
+func generate_AnotherIfStmt(flag bool) int {
+	return 0
+	return 1
+	if flag {
+		if flag {
+			return 2
+		}
+		return 3
+	} else {
+		return 5
+	}
+	return 4
+}
+func TestAnotherIfStmt(t *testing.T) {
+	want := []int{0, 1, 2, 3, 4}
+	got := itertools.ToSlice(AnotherIfStmt(true))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}

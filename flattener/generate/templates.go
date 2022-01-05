@@ -79,3 +79,25 @@ package {{.Name}}
 func renderPackage(name, content string) string {
 	return renderTemplate(packageTemplate, struct{ Name, Content string }{Name: name, Content: content})
 }
+
+var ifTemplate = `
+	if {{.Cond}} {
+		goto {{.ThenLabel}}
+	} else {
+		goto {{.ElseLabel}}
+	}
+{{.ThenLabel}}:
+	{{.ThenBody}}
+	goto {{.PostLabel}}
+{{.ElseLabel}}:
+	{{.ElseBody}}
+	goto {{.PostLabel}}
+{{.PostLabel}}:
+	__nop()
+`
+
+func renderIf(cond, thenLabel, thenBody, elseLabel, elseBody, postLabel string) string {
+	return renderTemplate(ifTemplate, struct{ Cond, ThenLabel, ThenBody, ElseLabel, ElseBody, PostLabel string }{
+		cond, thenLabel, thenBody, elseLabel, elseBody, postLabel,
+	})
+}
