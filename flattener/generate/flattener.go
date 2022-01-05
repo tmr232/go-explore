@@ -113,17 +113,8 @@ func collectFuncDecls(node ast.Node, recurse bool) []*ast.FuncDecl {
 
 func main() {
 	fset := token.NewFileSet()
-	src := `
-package src
 
-func generate_MyGen() int {
-	return 1
-	return 2
-	return 3
-}
-`
-
-	af, err := parser.ParseFile(fset, "test.go", src, 0)
+	af, err := parser.ParseFile(fset, "flattener_test.go", nil, 0)
 	if err != nil {
 		log.Fatal(err)
 	}
