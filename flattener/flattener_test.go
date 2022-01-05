@@ -74,3 +74,17 @@ func TestAnotherIfStmt(t *testing.T) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
 }
+
+func generate_RepeatOne() int {
+	for {
+		return 1
+	}
+}
+
+func TestRepeatOne(t *testing.T) {
+	want := []int{1, 1, 1, 1, 1}
+	got := itertools.ToSlice(itertools.Take(5, RepeatOne()))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}

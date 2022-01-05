@@ -71,12 +71,14 @@ func (flt *Flattener) flatten(node ast.Node) string {
 		}
 		returnValue := flt.render(results[0])
 		return renderReturn(stateId, returnValue)
+
 	case *ast.BlockStmt:
 		builder := strings.Builder{}
 		for _, stmt := range node.(*ast.BlockStmt).List {
 			builder.WriteString(flt.flatten(stmt))
 		}
 		return builder.String()
+
 	case *ast.IfStmt:
 		ifStmt := node.(*ast.IfStmt)
 		cond := flt.render(ifStmt.Cond)
@@ -86,8 +88,23 @@ func (flt *Flattener) flatten(node ast.Node) string {
 		thenBody := flt.flatten(ifStmt.Body)
 		elseBody := flt.flatten(ifStmt.Else)
 		return renderIf(cond, thenLabel, thenBody, elseLabel, elseBody, postLabel)
+
+	case *ast.ForStmt:
+		forStmt := node.(*ast.ForStmt)
+		if IsAllNil(forStmt.Init, forStmt.Cond, forStmt.Post) {
+			return renderForever(fmt.Sprintf("__for_%d", flt.getLabelId()), flt.flatten(forStmt.Body))
+		}
 	}
 	return "// UNSUPPORTED\n"
+}
+
+func IsAllNil(things ...any) bool {
+	for _, thing := range things {
+		if thing != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (flt *Flattener) FlattenFunction(fd *ast.FuncDecl) string {

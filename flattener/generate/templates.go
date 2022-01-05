@@ -101,3 +101,13 @@ func renderIf(cond, thenLabel, thenBody, elseLabel, elseBody, postLabel string) 
 		cond, thenLabel, thenBody, elseLabel, elseBody, postLabel,
 	})
 }
+
+var foreverTemplate = `
+{{.HeadLabel}}:
+	{{.Body}}
+	goto {{.HeadLabel}}
+`
+
+func renderForever(headLabel, body string) string {
+	return renderTemplate(foreverTemplate, struct{ HeadLabel, Body string }{headLabel, body})
+}
