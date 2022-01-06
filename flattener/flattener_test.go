@@ -88,3 +88,19 @@ func TestRepeatOne(t *testing.T) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
 }
+
+func generate_BasicVar() int {
+	var a int
+	b := 0
+	a = 1
+	b = 2
+	return 0
+}
+
+func TestBasicVar(t *testing.T) {
+	want := []int{1}
+	got := itertools.ToSlice(basicVar())
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
