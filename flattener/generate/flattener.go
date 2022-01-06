@@ -19,15 +19,23 @@ type visitFunc func(ast.Node) ast.Visitor
 func (f visitFunc) Visit(n ast.Node) ast.Visitor { return f(n) }
 
 type Flattener struct {
-	fset    *token.FileSet
-	stateId int
-	labelId int
+	fset      *token.FileSet
+	stateId   int
+	labelId   int
+	variables map[string]string
 }
 
 func (flt *Flattener) render(node ast.Node) string {
 	var out bytes.Buffer
 	format.Node(&out, flt.fset, node)
 	return out.String()
+}
+
+func (flt *Flattener) addVariable(name, typ string) {
+	if flt.variables == nil {
+		flt.variables = make(map[string]string)
+	}
+	flt.variables[name] = typ
 }
 
 func (flt *Flattener) getLabelId() int {
@@ -95,7 +103,12 @@ func (flt *Flattener) flatten(node ast.Node) string {
 			return renderForever(fmt.Sprintf("__for_%d", flt.getLabelId()), flt.flatten(forStmt.Body))
 		}
 	}
-	return "// UNSUPPORTED\n"
+	var out bytes.Buffer
+	ast.Fprint(&out, flt.fset, node, nil)
+	if node != nil {
+		return fmt.Sprintf("/* UNSUPPORTED: %v\n%v*/", flt.render(node), out.String())
+	}
+	return fmt.Sprintf("// UNSUPPORTED: nil\n")
 }
 
 func IsAllNil(things ...any) bool {
