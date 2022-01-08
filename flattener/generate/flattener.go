@@ -112,6 +112,8 @@ func (flt *Flattener) flatten(node ast.Node) string {
 	case *ast.AssignStmt:
 		// TODO: Actually support it! We currently can't declare vars in assignments.
 		return fmt.Sprintln(strings.Replace(flt.render(node), ":=", "=", -1))
+	case *ast.IncDecStmt:
+		return fmt.Sprintln(flt.render(node))
 	}
 	return flt.showUnsupported(node)
 }
