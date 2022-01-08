@@ -4,9 +4,19 @@ import (
 	"github.com/edwingeng/deque"
 )
 
+// TODO it seems that for completeness we need Iterable[T] as well, that implements `Iter()`.
+// TODO for Iterator[T], it should just return itself.
+// TODO this should allow easier interop with custom slice and container types.
+
 type Iterator[T any] interface {
-	Next() bool // Advance to next value, return true of one exists.
-	Value() T   // Get the current value
+	// Next tries to advance to the next value.
+	// Returns true if a value exists, false if not.
+	// Once an iterator returns false to indicate exhaustion,
+	// it should continue returning false.
+	Next() bool
+	// Value returns the current value of the iterator.
+	// Next() must be called and return true before every call to Value().
+	Value() T
 }
 
 type SizedIterator[T any] interface {
@@ -27,42 +37,12 @@ func (ic IteratorClosure[T]) Value() T {
 	return ic.value()
 }
 
-func ToSlice[T any](iter Iterator[T]) []T {
-	slice := []T{}
-	for iter.Next() {
-		slice = append(slice, iter.Value())
-	}
-	return slice
-}
-
-type SliceIterator[T any] struct {
-	slice []T
-	index int
-}
-
-func (s *SliceIterator[T]) Next() bool {
-	s.index++
-	return s.index < len(s.slice)
-}
-
-func (s *SliceIterator[T]) Value() T {
-	return s.slice[s.index]
-}
-
-func (s *SliceIterator[T]) Len() int {
-	return len(s.slice) - s.index - 1
-}
-
-func FromSlice[T any](slice []T) Iterator[T] {
-	return &SliceIterator[T]{slice: slice, index: -1}
-}
-
-type FilterInIterator[T any] struct {
+type filterInIterator[T any] struct {
 	iter     Iterator[T]
 	filterIn func(T) bool
 }
 
-func (f *FilterInIterator[T]) Next() bool {
+func (f *filterInIterator[T]) Next() bool {
 	for f.iter.Next() {
 		if f.filterIn(f.iter.Value()) {
 			return true
@@ -71,34 +51,40 @@ func (f *FilterInIterator[T]) Next() bool {
 	return false
 }
 
-func (f *FilterInIterator[T]) Value() T {
+func (f *filterInIterator[T]) Value() T {
 	return f.iter.Value()
 }
 
+// FilterIn keeps only elements matched by a predicate
 func FilterIn[T any](iter Iterator[T], filterIn func(T) bool) Iterator[T] {
-	return &FilterInIterator[T]{iter: iter, filterIn: filterIn}
+	return &filterInIterator[T]{iter: iter, filterIn: filterIn}
 }
 
-type IntRangeIterator struct {
+// FilterOut skips all elements matched by a predicate
+func FilterOut[T any](iter Iterator[T], filterOut func(T) bool) Iterator[T] {
+	return FilterIn(iter, Not(filterOut))
+}
+
+type intRangeIterator struct {
 	stop    int
 	current int
 }
 
-func (i *IntRangeIterator) Next() bool {
+func (i *intRangeIterator) Next() bool {
 	i.current++
 	return i.current < i.stop
-
 }
 
-func (i *IntRangeIterator) Value() int {
+func (i *intRangeIterator) Value() int {
 	return i.current
 }
 
+// IntRange iterates over the range [0, stop)
 func IntRange(stop int) Iterator[int] {
-	return &IntRangeIterator{stop: stop, current: -1}
+	return &intRangeIterator{stop: stop, current: -1}
 }
 
-type CycleIterator[T any] struct {
+type cycleIterator[T any] struct {
 	iter     Iterator[T]
 	slice    []T
 	dq       deque.Deque
@@ -108,7 +94,7 @@ type CycleIterator[T any] struct {
 	value    T
 }
 
-func (ci *CycleIterator[T]) Next() bool {
+func (ci *cycleIterator[T]) Next() bool {
 	if !ci.consumed {
 		if ci.iter.Next() {
 			ci.value = ci.iter.Value()
@@ -117,10 +103,7 @@ func (ci *CycleIterator[T]) Next() bool {
 			return true
 		} else {
 			ci.consumed = true
-			ci.slice = make([]T, ci.size)
-			for i, elem := range ci.dq.DequeueMany(0) {
-				ci.slice[i] = elem.(T)
-			}
+			ci.slice = dequeToSlice[T](ci.dq)
 		}
 	}
 
@@ -137,99 +120,98 @@ func (ci *CycleIterator[T]) Next() bool {
 	return true
 }
 
-func (ci *CycleIterator[T]) Value() T {
+func (ci *cycleIterator[T]) Value() T {
 	return ci.value
 }
 
+// Cycle iterates over the elements of iter, repeating when it reaches the end.
+// Cycle will store an internal copy of all iterated elements.
 func Cycle[T any](iter Iterator[T]) Iterator[T] {
-	return &CycleIterator[T]{iter: iter, index: -1, dq: deque.NewDeque()}
+	return &cycleIterator[T]{iter: iter, index: -1, dq: deque.NewDeque()}
 }
 
-type ISliceIterator[T any] struct {
-	iter Iterator[T]
-	skip int
-	take int
-}
-
-func (is *ISliceIterator[T]) Next() bool {
-	for ; is.skip > 0; is.skip-- {
-		if !is.iter.Next() {
+// Consume iterates through n items from the input iterator.
+// Consume returns true if it succeeded, false if the iterator was consumed before completion.
+func Consume[T any](n int, iter Iterator[T]) bool {
+	for i := 0; i < n; i++ {
+		if !iter.Next() {
 			return false
 		}
 	}
+	return true
+}
 
-	if is.take <= 0 {
+func ISlice[T any](iter Iterator[T], options ...RangeOption) Iterator[T] {
+	start, stop, step := getConfig(options).Unpack()
+	if stop <= start || step <= 0 || start < 0 || stop < 0 {
+		return EmptyIterator[T]()
+	}
+
+	var resultIterator IteratorClosure[T]
+
+	i := start
+
+	next := func() bool {
+		i += step
+		return i < stop && Consume(step, iter)
+	}
+
+	firstNext := func() bool {
+		if Consume(start, iter) && iter.Next() {
+			resultIterator.next = next
+			return true
+		}
+		resultIterator.next = func() bool { return false }
 		return false
 	}
-	is.take--
 
-	return is.iter.Next()
+	resultIterator.next = firstNext
+	resultIterator.value = iter.Value
+
+	return &resultIterator
 }
 
-func (is *ISliceIterator[T]) Value() T {
-	return is.iter.Value()
-}
-
+// Take yields the first n elements of the input iterator.
 func Take[T any](n int, iter Iterator[T]) Iterator[T] {
-	return &ISliceIterator[T]{iter: iter, take: n}
+	return ISlice(iter, Stop(n))
 }
 
+// Drop skips the first n elements of the input iterator
 func Drop[T any](n int, iter Iterator[T]) Iterator[T] {
-	return &ISliceIterator[T]{iter: iter, skip: n}
+	return ISlice(iter, Start(n))
 }
 
-func ISlice[T any](iter Iterator[T], start, end int) Iterator[T] {
-	return &ISliceIterator[T]{iter: iter, skip: start - 1, take: end - start}
-}
-
-type Pair[T any, U any] struct {
-	first  T
-	second U
-}
-
-func (p Pair[T, U]) First() T {
-	return p.first
-}
-func (p Pair[T, U]) Second() U {
-	return p.second
-}
-
-func PairToSlice[T any](pair Pair[T, T]) []T {
-	return []T{pair.first, pair.second}
-}
-
-type ZipIterator[T any, U any] struct {
+type zipIterator[T any, U any] struct {
 	first  Iterator[T]
 	second Iterator[U]
 }
 
-func (zip *ZipIterator[T, U]) Next() bool {
+func (zip *zipIterator[T, U]) Next() bool {
 	hasFirst := zip.first.Next()
 	hasSecond := zip.second.Next()
 
 	return hasFirst && hasSecond
-
 }
 
-func (zip *ZipIterator[T, U]) Value() Pair[T, U] {
+func (zip *zipIterator[T, U]) Value() Pair[T, U] {
 	return Pair[T, U]{zip.first.Value(), zip.second.Value()}
 }
 
-type ZipLongestIterator[T any, U any] struct {
-	ZipIterator[T, U]
+type zipLongestIterator[T any, U any] struct {
+	zipIterator[T, U]
 	fill      Pair[T, U]
 	hasFirst  bool
 	hasSecond bool
 }
 
-func (zip *ZipLongestIterator[T, U]) Next() bool {
+func (zip *zipLongestIterator[T, U]) Next() bool {
 	zip.hasFirst = zip.first.Next()
 	zip.hasSecond = zip.second.Next()
 
 	return zip.hasFirst || zip.hasSecond
 }
 
-func (zip *ZipLongestIterator[T, U]) Value() Pair[T, U] {
+func (zip *zipLongestIterator[T, U]) Value() Pair[T, U] {
 	if zip.hasFirst && zip.hasSecond {
 		return Pair[T, U]{zip.first.Value(), zip.second.Value()}
 	}
@@ -240,63 +222,67 @@ func (zip *ZipLongestIterator[T, U]) Value() Pair[T, U] {
 }
 
 func Zip[T any, U any](first Iterator[T], second Iterator[U]) Iterator[Pair[T, U]] {
-	return &ZipIterator[T, U]{first: first, second: second}
+	return &zipIterator[T, U]{first: first, second: second}
 }
 
 func ZipLongest[T any, U any](first Iterator[T], second Iterator[U], fill Pair[T, U]) Iterator[Pair[T, U]] {
-	return &ZipLongestIterator[T, U]{ZipIterator: ZipIterator[T, U]{first: first, second: second}, fill: fill}
+	return &zipLongestIterator[T, U]{zipIterator: zipIterator[T, U]{first: first, second: second}, fill: fill}
 }
 
-type RepeatIterator[T any] struct {
+type repeatIterator[T any] struct {
 	item T
 }
 
-func (r RepeatIterator[T]) Next() bool {
+func (r repeatIterator[T]) Next() bool {
 	return true
 }
 
-func (r RepeatIterator[T]) Value() T {
+func (r repeatIterator[T]) Value() T {
 	return r.item
 }
 
+// Repeat yields the input value infinite times.
 func Repeat[T any](item T) Iterator[T] {
-	return &RepeatIterator[T]{item: item}
+	return &repeatIterator[T]{item: item}
 }
 
+// RepeatN repeats the input value n times.
 func RepeatN[T any](item T, n int) Iterator[T] {
 	return Take(n, Repeat(item))
 }
 
-type CountIterator struct {
+type countIterator struct {
 	i    int
 	step int
 }
 
-func (c *CountIterator) Next() bool {
+func (c *countIterator) Next() bool {
 	c.i += c.step
 	return true
 }
 
-func (c *CountIterator) Value() int {
+func (c *countIterator) Value() int {
 	return c.i - c.step
 }
 
+// Count yields consecutive increasing numbers from start
 func Count(start int) Iterator[int] {
-	return &CountIterator{i: start, step: 1}
+	return &countIterator{i: start, step: 1}
 }
 
+// CountBy yields numbers starting with start and incrementing by step
 func CountBy(start int, step int) Iterator[int] {
-	return &CountIterator{i: start, step: step}
+	return &countIterator{i: start, step: step}
 }
 
-type ScanIterator[T any] struct {
+type scanIterator[T any] struct {
 	source  Iterator[T]
 	binOp   func(T, T) T
 	value   T
 	isFirst bool
 }
 
-func (s *ScanIterator[T]) Next() bool {
+func (s *scanIterator[T]) Next() bool {
 	if !s.source.Next() {
 		return false
 	}
@@ -310,20 +296,21 @@ func (s *ScanIterator[T]) Next() bool {
 	return true
 }
 
-func (s *ScanIterator[T]) Value() T {
+func (s *scanIterator[T]) Value() T {
 	return s.value
 }
 
+// Scan performce a stepwise reduction over the input iterator, yielding all intermediate values.
 func Scan[T any](iter Iterator[T], binOp func(T, T) T) Iterator[T] {
-	return &ScanIterator[T]{source: iter, binOp: binOp}
+	return &scanIterator[T]{source: iter, binOp: binOp}
 }
 
-type ChainIterator[T any] struct {
+type chainIterator[T any] struct {
 	iterators []Iterator[T]
 	current   int
 }
 
-func (c *ChainIterator[T]) Next() bool {
+func (c *chainIterator[T]) Next() bool {
 	for ; ; c.current++ {
 		if c.current >= len(c.iterators) {
 			return false
@@ -335,18 +322,24 @@ func (c *ChainIterator[T]) Next() bool {
 	}
 }
 
-func (c *ChainIterator[T]) Value() T {
+func (c *chainIterator[T]) Value() T {
 	return c.iterators[c.current].Value()
 }
 
+// Chain yields elements from the first input iterator until it is exhausted, then from the
+// second input iterator, the third, and so forth.
 func Chain[T any](iterators ...Iterator[T]) Iterator[T] {
-	return &ChainIterator[T]{iterators: iterators}
+	return &chainIterator[T]{iterators: iterators}
 }
 
+// Literal yields the values it is created with.
 func Literal[T any](elem ...T) Iterator[T] {
 	return FromSlice(elem)
 }
 
+// Compress yields data elements corresponding to true selector elements.
+// Forms a shorter iterator from selected data elements using the selectors to
+// choose the data elements.
 func Compress[T any](data Iterator[T], selectors Iterator[bool]) Iterator[T] {
 	zip := Zip(data, selectors)
 	var pair Pair[T, bool]
@@ -368,6 +361,7 @@ func Compress[T any](data Iterator[T], selectors Iterator[bool]) Iterator[T] {
 	}
 }
 
+// Flatten removes one level of nesting in an iterator of iterators.
 func Flatten[T any](iter Iterator[Iterator[T]]) Iterator[T] {
 	var current Iterator[T]
 	return &IteratorClosure[T]{
@@ -388,16 +382,9 @@ func Flatten[T any](iter Iterator[Iterator[T]]) Iterator[T] {
 	}
 }
 
-func MakeSlice[T any](n int, gen func() T) []T {
-	slice := make([]T, n)
-	for i := range slice {
-		slice[i] = gen()
-	}
-	return slice
-}
-
+// Tee returns a slice of n independent iterators with the same content as the input iterator.
 func Tee[T any](iter Iterator[T], n int) []Iterator[T] {
-	deques := MakeSlice[deque.Deque](n, deque.NewDeque)
+	deques := makeSlice[deque.Deque](n, deque.NewDeque)
 	makeIterator := func(dq deque.Deque) Iterator[T] {
 		var current T
 		return &IteratorClosure[T]{
@@ -428,12 +415,13 @@ func Tee[T any](iter Iterator[T], n int) []Iterator[T] {
 	return iterators
 }
 
+// Tee2 returns two independent iterators with the same content as the input iterator.
 func Tee2[T any](iter Iterator[T]) (Iterator[T], Iterator[T]) {
 	iterators := Tee(iter, 2)
 	return iterators[0], iterators[1]
 }
 
-func ClosureFromSingle[T any](advance func() (bool, T)) Iterator[T] {
+func FromAdvance[T any](advance func() (bool, T)) Iterator[T] {
 	var value T
 	return &IteratorClosure[T]{
 		next: func() bool {
@@ -447,6 +435,28 @@ func ClosureFromSingle[T any](advance func() (bool, T)) Iterator[T] {
 	}
 }
 
+func FromAdvanceSafe[T any](advance func() (bool, T)) Iterator[T] {
+	var value T
+	var ic IteratorClosure[T]
+	ic = IteratorClosure[T]{
+		next: func() bool {
+			hasNext, newValue := advance()
+			if !hasNext {
+				ic.next = func() bool { return false }
+			}
+			value = newValue
+			return hasNext
+		},
+		value: func() T {
+			return value
+		},
+	}
+	return &ic
+}
+
+// Map returns an iterator whose elements are the result of calling op on the elements
+// of the input iterator.
+// Note that op is only guaranteed to be called when getting a value, not in pure iteration.
 func Map[A any, B any](op func(A) B, iter Iterator[A]) Iterator[B] {
 	return &IteratorClosure[B]{
 		next: iter.Next,
@@ -456,39 +466,15 @@ func Map[A any, B any](op func(A) B, iter Iterator[A]) Iterator[B] {
 	}
 }
 
+/* TODO use codegen for generating Map functions that take more iterables of different element types.
+Map2 takes 2 iterators, Map3 takes 3...
+*/
+
 func Tabulate[T any](f func(int) T, start int) Iterator[T] {
 	return Map(f, Count(start))
 }
 
-type RingSlice[T any] struct {
-	slice    []T
-	last     int
-	overflow bool
-}
-
-func NewRingSlice[T any](size int) RingSlice[T] {
-	return RingSlice[T]{slice: make([]T, size)}
-}
-
-func (rs *RingSlice[T]) Push(item T) {
-	if rs.last >= len(rs.slice) {
-		rs.last = 0
-		rs.overflow = true
-	}
-
-	rs.slice[rs.last] = item
-
-	rs.last++
-}
-
-func (rs *RingSlice[T]) Iter() Iterator[T] {
-	if !rs.overflow {
-		return FromSlice(rs.slice[:rs.last])
-	} else {
-		return Chain(FromSlice(rs.slice[rs.last:]), FromSlice(rs.slice[:rs.last]))
-	}
-}
-
+// Tail returns an iterator with the last n elements of the input iterator.
 func Tail[T any](n int, iter Iterator[T]) Iterator[T] {
 	ring := NewRingSlice[T](n)
 	for iter.Next() {
@@ -497,57 +483,38 @@ func Tail[T any](n int, iter Iterator[T]) Iterator[T] {
 	return ring.Iter()
 }
 
-type Optional[T any] struct {
-	isPresent bool
-	value     T
-}
-
-func OptionalWith[T any](value T) Optional[T] {
-	return Optional[T]{isPresent: true, value: value}
-}
-
-func EmptyOptional[T any]() Optional[T] {
-	return Optional[T]{}
-}
-
-func (o Optional[T]) Get() (T, bool) {
-	return o.value, o.isPresent
-}
-
-func (o Optional[T]) Or(alt T) T {
-	if o.isPresent {
-		return o.value
-	}
-	return alt
-}
-
-func Nth[T any](iter Iterator[T], n int) Optional[T] {
-	islice := Drop(n-1, iter)
+// Nth gets the n'th element if an iterator, if one exists.
+func Nth[T any](iter Iterator[T], n int) (value T, exists bool) {
+	islice := ISlice(iter, Start(n), Stop(n+1))
 	if islice.Next() {
-		return OptionalWith(islice.Value())
+		return islice.Value(), true
 	}
-	return EmptyOptional[T]()
+	return *new(T), false
 }
-func Reduce[T any](iter Iterator[T], binOp func(a, b T) T) Optional[T] {
+
+// Reduce performs a reduction over the values of the input iterator, if there are such values.
+func Reduce[T any](iter Iterator[T], binOp func(a, b T) T) (value T, exists bool) {
 	if !iter.Next() {
-		return EmptyOptional[T]()
+		return *new(T), false
 	}
-	value := iter.Value()
+	value = iter.Value()
 
 	for iter.Next() {
 		value = binOp(value, iter.Value())
 	}
 
-	return OptionalWith(value)
+	return value, true
 }
 
 func Prefix[T any](iter Iterator[T], prefix ...T) Iterator[T] {
 	return Chain(Literal(prefix...), iter)
 }
+
 func Suffix[T any](iter Iterator[T], suffix ...T) Iterator[T] {
 	return Chain(iter, Literal(suffix...))
 }
 
+// ILen returns the number of elements in an iterator. Consumes the iterator.
 func ILen[T any](iter Iterator[T]) int {
 	length := 0
 	for iter.Next() {
@@ -585,10 +552,7 @@ func GroupByKey[T any, K any](iter Iterator[T], key Key[T, K]) Iterator[Group[T,
 			var zero Group[T, K]
 			return false, zero
 		}
-		slice := make([]T, dq.Len())
-		for i, elem := range dq.DequeueMany(0) {
-			slice[i] = elem.(T)
-		}
+		slice := dequeToSlice[T](dq)
 		return true, Group[T, K]{slice, currentKey}
 	}
 
@@ -609,8 +573,7 @@ func GroupByKey[T any, K any](iter Iterator[T], key Key[T, K]) Iterator[Group[T,
 		return fromDeque()
 	}
 
-	return ClosureFromSingle(advance)
-
+	return FromAdvance(advance)
 }
 
 func GroupByValue[T comparable](iter Iterator[T]) Iterator[Group[T, T]] {
@@ -624,32 +587,28 @@ func GroupByFunc[T any, K comparable](iter Iterator[T], key func(T) K) Iterator[
 	return GroupByKey(iter, MakeKey(key, IsSameValue[K]))
 }
 
-func Identity[T any](t T) T {
-	return t
-}
-
-func IsSameValue[T comparable](a, b T) bool {
-	return a == b
-}
-
 func AllEqualValue[T comparable](iter Iterator[T]) bool {
 	groupBy := GroupByValue(iter)
 	groupBy.Next()
 	return !groupBy.Next()
 }
+
 func AllEqualByKey[T any, K any](iter Iterator[T], key Key[T, K]) bool {
 	groupBy := GroupByKey(iter, key)
 	groupBy.Next()
 	return !groupBy.Next()
 }
 
+// EmptyIterator returns an empty iterator.
+// It's .Next method will always return false.
 func EmptyIterator[T any]() Iterator[T] {
-	return ClosureFromSingle(func() (bool, T) {
+	return FromAdvance(func() (bool, T) {
 		var value T
 		return false, value
 	})
 }
 
+// Pairwise yields pairs of consecutive values from the input iterator.
 func Pairwise[T any](iter Iterator[T]) Iterator[Pair[T, T]] {
 	a, b := Tee2(iter)
 	if !b.Next() {
@@ -658,6 +617,7 @@ func Pairwise[T any](iter Iterator[T]) Iterator[Pair[T, T]] {
 	return Zip(a, b)
 }
 
+// Product is the Cartesian product of the input iterators.
 func Product[T any](iterators ...Iterator[T]) Iterator[[]T] {
 	pools := ToSlice(Map(ToSlice[T], FromSlice(iterators)))
 	indices := make([]int, len(iterators))
@@ -684,8 +644,7 @@ func Product[T any](iterators ...Iterator[T]) Iterator[[]T] {
 		return true, value
 	}
 
-	return ClosureFromSingle(advance)
-
+	return FromAdvance(advance)
 }
 
 func TakeWhile[T any](predicate func(T) bool, iter Iterator[T]) Iterator[T] {
@@ -715,10 +674,11 @@ func DropWhile[T any](predicate func(T) bool, iter Iterator[T]) Iterator[T] {
 }
 
 func FromCallable[T any](f func() T) Iterator[T] {
-	return ClosureFromSingle(func() (bool, T) {
+	return FromAdvance(func() (bool, T) {
 		return true, f()
 	})
 }
+
 func FromCallableWhile[T any](f func() T, predicate Predicate[T]) Iterator[T] {
 	return TakeWhile(predicate, FromCallable(f))
 }
@@ -727,14 +687,49 @@ func FromCallableUntil[T any](f func() T, predicate Predicate[T]) Iterator[T] {
 	return TakeWhile(Not(predicate), FromCallable(f))
 }
 
-func Chunked[T any](iter Iterator[T], n int) Iterator[[]T] {
-	return FromCallableWhile(func() []T { return ToSlice(Take(n, iter)) }, SliceNotEmpty[T])
+func WindowedWithFiller[T any](iter Iterator[T], n int, filler T) Iterator[[]T] {
+	ring := NewRingSlice[T](n)
+	first := true
+	advance := func() (bool, []T) {
+		if first {
+			ForEach(Take(n, Chain(iter, Repeat(filler))), ring.Push)
+			first = false
+			return true, ring.ToSlice()
+		}
+		if !iter.Next() {
+			return false, nil
+		}
+		ring.Push(iter.Value())
+		return true, ring.ToSlice()
+	}
+
+	return FromAdvance(advance)
+}
+func Windowed[T any](iter Iterator[T], n int) Iterator[[]T] {
+	ring := NewRingSlice[T](n)
+	first := true
+	advance := func() (bool, []T) {
+		if first {
+			ForEach(Take(n, Chain(iter)), ring.Push)
+			first = false
+			result := ring.ToSlice()
+			if len(result) < n {
+				return false, nil
+			}
+			return true, result
+		}
+		if !iter.Next() {
+			return false, nil
+		}
+		ring.Push(iter.Value())
+		return true, ring.ToSlice()
+	}
+
+	return FromAdvance(advance)
 }
 
-func PairAdaptor[T any, R any](f func(T, T) R) func(Pair[T, T]) R {
-	return func(p Pair[T, T]) R {
-		return f(p.first, p.second)
-	}
+func Chunked[T any](iter Iterator[T], n int) Iterator[[]T] {
+	return FromCallableWhile(func() []T { return ToSlice(Take(n, iter)) }, SliceNotEmpty[T])
 }
 
 func ChunkBy[T any, K comparable](iter Iterator[T], key func(T) K) Iterator[[]T] {
@@ -746,20 +741,26 @@ func ChunkBy[T any, K comparable](iter Iterator[T], key func(T) K) Iterator[[]T]
 	)
 }
 
+// EnumerateFrom yields pairs containing a count (from start)
+// and a value yielded by the iterator argument.
 func EnumerateFrom[T any](iter Iterator[T], start int) Iterator[Pair[int, T]] {
 	return Zip(Count(start), iter)
 }
 
+// Enumerate  yields pairs containing a count (from zero)
+// and a value yielded by the iterator argument.
 func Enumerate[T any](iter Iterator[T]) Iterator[Pair[int, T]] {
 	return EnumerateFrom(iter, 0)
 }
 
+// ForEach executes f on every element of the input iterator.
 func ForEach[T any](iter Iterator[T], f func(T)) {
 	for iter.Next() {
 		f(iter.Value())
 	}
 }
 
+// RoundRobin cycles through all input iterators yielding an element from each, until all are exhausted.
 func RoundRobin[T any](iterators ...Iterator[T]) Iterator[T] {
 	indices := Cycle(IntRange(len(iterators)))
 	active := ToSlice(Take(len(iterators), Repeat(true)))
@@ -779,7 +780,31 @@ func RoundRobin[T any](iterators ...Iterator[T]) Iterator[T] {
 		var zero T
 		return false, zero
 	}
-	return ClosureFromSingle(advance)
+	return FromAdvance(advance)
+}
+
+// InterleaveFlat returns
+func InterleaveFlat[T any](iterators ...Iterator[T]) Iterator[T] {
+	size := len(iterators)
+	slice := make([]T, size)
+	var zero T
+	k := 0
+	advance := func() (bool, T) {
+		if k == 0 {
+			for i, iter := range iterators {
+				if !iter.Next() {
+					return false, zero
+				}
+				slice[i] = iter.Value()
+			}
+		}
+
+		value := slice[k]
+		k = (k + 1) % size
+		return true, value
+	}
+
+	return FromAdvance(advance)
 }
 
 func Interleave[T any](iterators ...Iterator[T]) Iterator[[]T] {
@@ -796,8 +821,9 @@ func Interleave[T any](iterators ...Iterator[T]) Iterator[[]T] {
 		return true, slice
 	}
 
-	return ClosureFromSingle(advance)
+	return FromAdvance(advance)
 }
+
 func InterleaveLongest[T any](filler T, iterators ...Iterator[T]) Iterator[[]T] {
 	size := len(iterators)
 	slice := make([]T, size)
@@ -815,7 +841,71 @@ func InterleaveLongest[T any](filler T, iterators ...Iterator[T]) Iterator[[]T] 
 		return hasValues, slice
 	}
 
-	return ClosureFromSingle(advance)
+	return FromAdvance(advance)
+}
+
+// AllButLast splits the input iterator into two iterators.
+// The first iterator will yield all values except the last n.
+// The second will yield the last n items.
+// The first iterator must be fully consumed before iterating over the second iterator.
+func AllButLast[T any](iter Iterator[T], n int) (first Iterator[T], last Iterator[T]) {
+	lastItems := make([]T, n)
+	i := 0
+	var zero T
+	firstAdvance := func() (bool, T) {
+		// Load the n last items
+		for ; i < n; i++ {
+			if !iter.Next() {
+				return false, zero
+			}
+			lastItems[i] = iter.Value()
+		}
+		// Store new one, return oldest
+		if !iter.Next() {
+			return false, zero
+		}
+		value := lastItems[i%n]
+		lastItems[i%n] = iter.Value()
+		i++
+		return true, value
+	}
+	k := 0
+	lastAdvance := func() (bool, T) {
+		length := Min(i, n)
+
+		if k >= length {
+			return false, zero
+		}
+		value := lastItems[(i+k)%n]
+		k++
+		return true, value
+	}
+
+	return FromAdvance(firstAdvance), FromAdvance(lastAdvance)
+}
+
+// Intersperse yields the input value between every 2 elements of the input iterator.
+func Intersperse[T any](iter Iterator[T], value T) Iterator[T] {
+	first, last := AllButLast(iter, 1)
+	return Chain(InterleaveFlat(first, Repeat(value)), last)
+}
+
+func Unzip[A, B any](iter Iterator[Pair[A, B]]) (Iterator[A], Iterator[B]) {
+	iterA, iterB := Tee2(iter)
+	return Map(Pair[A, B].First, iterA), Map(Pair[A, B].Second, iterB)
+}
+
+func Deinterleave[T any](iter Iterator[[]T]) []Iterator[T] {
+	if !iter.Next() {
+		return nil
+	}
+	first := iter.Value()
+	size := len(first)
+	iters := make([]Iterator[T], size)
+	for i, it := range Tee(iter, size) {
+		iters[i] = Prefix(Map(ItemGetter[T](i), it), first[i])
+	}
+	return iters
 }
 
 /*

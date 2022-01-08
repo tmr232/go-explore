@@ -44,6 +44,7 @@ func All[T any](preds ...Predicate[T]) Predicate[T] {
 		return true
 	}
 }
+
 func Any[T any](preds ...Predicate[T]) Predicate[T] {
 	return func(value T) bool {
 		for _, pred := range preds {

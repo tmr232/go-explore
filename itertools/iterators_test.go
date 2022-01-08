@@ -40,6 +40,29 @@ func TestFilterIn(t *testing.T) {
 	}
 }
 
+func TestFilterOut(t *testing.T) {
+	got := ToSlice(FilterOut(IntRange(10), func(n int) bool {
+		return n%2 == 0
+	}))
+
+	want := []int{1, 3, 5, 7, 9}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
+func TestFilter(t *testing.T) {
+	want := ToSlice(IntRange(10))
+	filter := func(n int) bool {
+		return n%2 == 0
+	}
+	got := ToSlice(InterleaveFlat(FilterIn(IntRange(10), filter), FilterOut(IntRange(10), filter)))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
 func TestTake(t *testing.T) {
 	want := []int{0, 1, 2, 3}
 
@@ -226,6 +249,7 @@ func TestGroupByKey(t *testing.T) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
 }
+
 func TestGroupByValue(t *testing.T) {
 	want := []int{1, 2, 3}
 	got := ToSlice(
@@ -305,5 +329,263 @@ func TestChunkBy(t *testing.T) {
 	got := ToSlice(ChunkBy(Literal(1, 1, 1, 2, 2, 3), Identity[int]))
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
+func TestFromAdvanceSafe(t *testing.T) {
+	hasNext := true
+	want := []int{1}
+	safe := FromAdvanceSafe(func() (next bool, value int) {
+		next = hasNext
+		hasNext = !hasNext
+		value = 1
+		return
+	})
+	got := ToSlice(Take(10, Chain(safe, safe, safe)))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
+func TestAllButLast(t *testing.T) {
+	want := [][]int{{1, 2, 3}, {4, 5, 6}}
+	first, last := AllButLast(Literal(1, 2, 3, 4, 5, 6), 3)
+	firstSlice := ToSlice(first)
+	got := [][]int{firstSlice, ToSlice(last)}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
+func TestIntersperse(t *testing.T) {
+	want := []int{1, 5, 2, 5, 3}
+	got := ToSlice(Intersperse(Literal(1, 2, 3), 5))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
+func TestISliceEx(t *testing.T) {
+	type args struct {
+		iter    Iterator[int]
+		options []RangeOption
+	}
+	tests := []struct {
+		name string
+		args args
+		want []int
+	}{
+		{
+			"islice(range(10), 2, 6)",
+			args{Range(Stop(10)), []RangeOption{Start(2), Stop(6)}},
+			[]int{2, 3, 4, 5},
+		},
+		{
+			"islice(range(10), step=2, stop=5)",
+			args{Range(Stop(10)), []RangeOption{Step(2), Stop(5)}},
+			[]int{0, 2, 4},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToSlice(ISlice(tt.args.iter, tt.args.options...)); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ISlice() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReduce(t *testing.T) {
+	type args struct {
+		iter  Iterator[int]
+		binOp func(a, b int) int
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantValue  int
+		wantExists bool
+	}{
+		{
+			"Sum(1...10)",
+			args{
+				IntRange(10 + 1),
+				func(a, b int) int { return a + b },
+			},
+			55,
+			true,
+		},
+		{
+			"Mul(1...5)",
+			args{
+				Range(Start(1), Stop(6)),
+				func(a, b int) int { return a * b },
+			},
+			120,
+			true,
+		},
+		{
+			"Sum()",
+			args{
+				EmptyIterator[int](),
+				func(a, b int) int { return a + b },
+			},
+			120,
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValue, gotExists := Reduce(tt.args.iter, tt.args.binOp)
+			if gotExists != tt.wantExists {
+				t.Errorf("Reduce() gotExists = %v, want %v", gotExists, tt.wantExists)
+			}
+			if gotExists && !reflect.DeepEqual(gotValue, tt.wantValue) {
+				t.Errorf("Reduce() gotValue = %v, want %v", gotValue, tt.wantValue)
+			}
+		})
+	}
+
+	t.Run("Join strings", func(t *testing.T) {
+		want := "abcdefg"
+		got, exists := Reduce(Literal("a", "b", "c", "d", "e", "f", "g"), func(a, b string) string {
+			return a + b
+		})
+		if !exists {
+			t.Errorf("Failed calculating result.")
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestNth(t *testing.T) {
+	type args struct {
+		iter Iterator[int]
+		n    int
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantValue  int
+		wantExists bool
+	}{
+		{
+			"Get negative element",
+			args{Literal(1, 2, 3), -2},
+			0,
+			false,
+		},
+		{
+			"Get 1st element",
+			args{Literal(1, 2, 3), 0},
+			1,
+			true,
+		},
+		{
+			"Get element past end",
+			args{Literal(1, 2, 3), 5},
+			1,
+			false,
+		},
+		{
+			"Get last element",
+			args{Literal(1, 2, 3), 2},
+			3,
+			true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValue, gotExists := Nth(tt.args.iter, tt.args.n)
+			if gotExists != tt.wantExists {
+				t.Errorf("Nth() gotExists = %v, want %v", gotExists, tt.wantExists)
+			}
+
+			if gotExists && !reflect.DeepEqual(gotValue, tt.wantValue) {
+				t.Errorf("Nth() gotValue = %v, want %v", gotValue, tt.wantValue)
+			}
+		})
+	}
+}
+
+func TestWindowedWithFiller(t *testing.T) {
+	type args struct {
+		iter   Iterator[int]
+		n      int
+		filler int
+	}
+	tests := []struct {
+		name string
+		args args
+		want [][]int
+	}{
+		{
+			"Pairs",
+			args{IntRange(5),
+				2,
+				0},
+			[][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}},
+		},
+		{
+			"Triplets",
+			args{IntRange(5),
+				3,
+				0},
+			[][]int{{0, 1, 2}, {1, 2, 3}, {2, 3, 4}},
+		},
+		{
+			"With Filler",
+			args{IntRange(2),
+				3,
+				0},
+			[][]int{{0, 1, 0}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToSlice(WindowedWithFiller(tt.args.iter, tt.args.n, tt.args.filler)); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("WindowedWithFiller() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWindowed(t *testing.T) {
+	type args struct {
+		iter Iterator[int]
+		n    int
+	}
+	tests := []struct {
+		name string
+		args args
+		want [][]int
+	}{
+		{
+			"Pairs",
+			args{IntRange(5),
+				2},
+			[][]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}},
+		},
+		{
+			"Triplets",
+			args{IntRange(5),
+				3},
+			[][]int{{0, 1, 2}, {1, 2, 3}, {2, 3, 4}},
+		},
+		{
+			"Too long",
+			args{IntRange(2),
+				3},
+			[][]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ToSlice(Windowed(tt.args.iter, tt.args.n)); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("WindowedWithFiller() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
