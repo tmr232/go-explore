@@ -21,6 +21,9 @@ func renderTemplate(textTemplate string, data any) string {
 
 var functionTemplate = `
 func {{.Name}}({{.Params}}) itertools.Iterator[int] {
+	{{range $name, $typ := .VarDecls}}
+	var {{$name}} {{$typ}}
+	{{end}}
 	__next := 0
 	var __zero int
 	__nop := func() {}
@@ -42,7 +45,7 @@ func {{.Name}}({{.Params}}) itertools.Iterator[int] {
 }
 `
 
-func renderFunction(name, params, body string, stateCount int) string {
+func renderFunction(name, params, body string, stateCount int, variableDeclarations map[string]string) string {
 	nextIndices := make([]int, stateCount+1)
 	for i := range nextIndices {
 		nextIndices[i] = i
@@ -51,7 +54,8 @@ func renderFunction(name, params, body string, stateCount int) string {
 	return renderTemplate(functionTemplate, struct {
 		Name, Params, Body string
 		NextIndices        []int
-	}{Name: name, Params: params, Body: body, NextIndices: nextIndices})
+		VarDecls           map[string]string
+	}{Name: name, Params: params, Body: body, NextIndices: nextIndices, VarDecls: variableDeclarations})
 }
 
 var returnTemplate = `
