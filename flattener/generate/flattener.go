@@ -102,7 +102,21 @@ func (flt *Flattener) flatten(node ast.Node) string {
 		if IsAllNil(forStmt.Init, forStmt.Cond, forStmt.Post) {
 			return renderForever(fmt.Sprintf("__for_%d", flt.getLabelId()), flt.flatten(forStmt.Body))
 		}
+	case *ast.DeclStmt:
+		name, typ := parseDeclStmt(node.(*ast.DeclStmt))
+		if len(name) == 0 {
+			break
+		}
+		flt.addVariable(name, typ)
+		return fmt.Sprintf("// Original declaration of %s as %s\n", name, typ)
+	case *ast.AssignStmt:
+		// TODO: Actually support it! We currently can't declare vars in assignments.
+		return fmt.Sprintln(strings.Replace(flt.render(node), ":=", "=", -1))
 	}
+	return flt.showUnsupported(node)
+}
+
+func (flt *Flattener) showUnsupported(node ast.Node) string {
 	var out bytes.Buffer
 	ast.Fprint(&out, flt.fset, node, nil)
 	if node != nil {
@@ -110,6 +124,29 @@ func (flt *Flattener) flatten(node ast.Node) string {
 	}
 	return fmt.Sprintf("// UNSUPPORTED: nil\n")
 }
+
+func parseDeclStmt(decl *ast.DeclStmt) (name, typ string) {
+	genDecl, ok := decl.Decl.(*ast.GenDecl)
+	if !ok {
+		return "", ""
+	}
+	name = genDecl.Specs[0].(*ast.ValueSpec).Names[0].Name
+	typ = genDecl.Specs[0].(*ast.ValueSpec).Type.(*ast.Ident).Name
+	return
+}
+
+//func (flt *Flattener) parseAssignStmt(assign *ast.AssignStmt, addVar func(name, typ string)) string {
+//	for i, expr := range assign.Lhs {
+//		ident, ok := expr.(*ast.Ident)
+//		if !ok {
+//			return flt.showUnsupported(assign)
+//		}
+//		if ident.Obj.Decl != nil {
+//			return flt.showUnsupported(assign)
+//		}
+//		addVar(ident.Name, )
+//	}
+//}
 
 func IsAllNil(things ...any) bool {
 	for _, thing := range things {
@@ -130,7 +167,7 @@ func (flt *Flattener) FlattenFunction(fd *ast.FuncDecl) string {
 	_, after, _ := strings.Cut(signature, "(")
 	params, _, _ := strings.Cut(after, ")")
 
-	return renderFunction(name, params, body, flt.stateId)
+	return renderFunction(name, params, body, flt.stateId, flt.variables)
 }
 
 func collectFuncDecls(node ast.Node, recurse bool) []*ast.FuncDecl {
@@ -191,10 +228,13 @@ func main() {
 		},
 	)
 
-	formattedResult, err := format.Source(out.Bytes())
-	if err != nil {
-		panic(err)
-	}
+	//formattedResult, err := format.Source(out.Bytes())
+	//if err != nil {
+	//	fmt.Println(out.String())
+	//	panic(err)
+	//}
+
+	formattedResult := out.Bytes()
 
 	const target = "generators_gen.go"
 	if err := os.WriteFile(target, formattedResult, 0644); err != nil {

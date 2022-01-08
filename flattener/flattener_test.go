@@ -89,17 +89,37 @@ func TestRepeatOne(t *testing.T) {
 	}
 }
 
-func generate_BasicVar() int {
+//func generate_BasicVar() int {
+//	var a int
+//	b := 0
+//	a = 1
+//	b = 2
+//	c := b
+//	return 0
+//}
+//
+//func TestBasicVar(t *testing.T) {
+//	want := []int{1}
+//	got := itertools.ToSlice(basicVar())
+//	if !reflect.DeepEqual(got, want) {
+//		t.Errorf("got = %v, want %v", got, want)
+//	}
+//}
+
+func generate_Fib() int {
 	var a int
-	b := 0
+	var b int
 	a = 1
-	b = 2
-	return 0
+	b = 1
+	for {
+		return a
+		a, b = b, a+b
+	}
 }
 
-func TestBasicVar(t *testing.T) {
-	want := []int{1}
-	got := itertools.ToSlice(basicVar())
+func TestFib(t *testing.T) {
+	want := []int{1, 1, 2, 3, 5, 8, 13, 21, 34, 55}
+	got := itertools.ToSlice(itertools.Take(10, Fib()))
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
