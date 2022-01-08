@@ -124,3 +124,19 @@ func TestFib(t *testing.T) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
 }
+
+func generate_Count() int {
+	var i int
+	for {
+		return i
+		i++
+	}
+}
+
+func TestCount(t *testing.T) {
+	want := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	got := itertools.ToSlice(itertools.Take(10, Count()))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
