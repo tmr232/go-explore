@@ -37,6 +37,47 @@ func (ic IteratorClosure[T]) Value() T {
 	return ic.value()
 }
 
+// FromAdvance returns an iterator built using the provided advance function.
+// The advance function is called once per iteration, returning a flag indicating
+// the existence of a value, and the value itself.
+// When implementing your own, return (true, value) as long as values are available,
+// and (false, *new(T)) when the iterator is exhausted.
+func FromAdvance[T any](advance func() (hasValue bool, value T)) Iterator[T] {
+	var value T
+	return &IteratorClosure[T]{
+		next: func() bool {
+			hasNext, newValue := advance()
+			value = newValue
+			return hasNext
+		},
+		value: func() T {
+			return value
+		},
+	}
+}
+
+// FromAdvanceSafe is like FromAdvance, but ensure that once (false, _) is returned,
+// the provided advance function will not get called, and all consecutive calls to `.Next()`
+// will return false.
+func FromAdvanceSafe[T any](advance func() (hasValue bool, value T)) Iterator[T] {
+	var value T
+	var ic IteratorClosure[T]
+	ic = IteratorClosure[T]{
+		next: func() bool {
+			hasNext, newValue := advance()
+			if !hasNext {
+				ic.next = func() bool { return false }
+			}
+			value = newValue
+			return hasNext
+		},
+		value: func() T {
+			return value
+		},
+	}
+	return &ic
+}
+
 type filterInIterator[T any] struct {
 	iter     Iterator[T]
 	filterIn func(T) bool
@@ -419,39 +460,6 @@ func Tee[T any](iter Iterator[T], n int) []Iterator[T] {
 func Tee2[T any](iter Iterator[T]) (Iterator[T], Iterator[T]) {
 	iterators := Tee(iter, 2)
 	return iterators[0], iterators[1]
-}
-
-func FromAdvance[T any](advance func() (bool, T)) Iterator[T] {
-	var value T
-	return &IteratorClosure[T]{
-		next: func() bool {
-			hasNext, newValue := advance()
-			value = newValue
-			return hasNext
-		},
-		value: func() T {
-			return value
-		},
-	}
-}
-
-func FromAdvanceSafe[T any](advance func() (bool, T)) Iterator[T] {
-	var value T
-	var ic IteratorClosure[T]
-	ic = IteratorClosure[T]{
-		next: func() bool {
-			hasNext, newValue := advance()
-			if !hasNext {
-				ic.next = func() bool { return false }
-			}
-			value = newValue
-			return hasNext
-		},
-		value: func() T {
-			return value
-		},
-	}
-	return &ic
 }
 
 // Map returns an iterator whose elements are the result of calling op on the elements
