@@ -506,6 +506,14 @@ func Reduce[T any](iter Iterator[T], binOp func(a, b T) T) (value T, exists bool
 	return value, true
 }
 
+func Fold[Acc any, Elem any](init Acc, iter Iterator[Elem], op func(acc Acc, elem Elem) Acc) Acc {
+	acc := init
+	for iter.Next() {
+		acc = op(acc, iter.Value())
+	}
+	return acc
+}
+
 func Prefix[T any](iter Iterator[T], prefix ...T) Iterator[T] {
 	return Chain(Literal(prefix...), iter)
 }
@@ -888,6 +896,11 @@ func AllButLast[T any](iter Iterator[T], n int) (first Iterator[T], last Iterato
 func Intersperse[T any](iter Iterator[T], value T) Iterator[T] {
 	first, last := AllButLast(iter, 1)
 	return Chain(InterleaveFlat(first, Repeat(value)), last)
+}
+
+// Join yields the elements of iter separated by the separator
+func Join[T any](iter Iterator[T], separator T) Iterator[T] {
+	return Intersperse(iter, separator)
 }
 
 func Unzip[A, B any](iter Iterator[Pair[A, B]]) (Iterator[A], Iterator[B]) {
