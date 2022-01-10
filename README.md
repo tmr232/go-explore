@@ -48,7 +48,7 @@ A simple Fibonacci iterator can be written as follows (`itertools.` remove for b
 func Fibonacci() Iterator[int] {
 	a, b := 1, 1
 	advance := func() (bool, int) {
-        retval := a
+		retval := a
 		a, b = b, a + b
 		return true, retval
 	}
