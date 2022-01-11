@@ -822,28 +822,6 @@ func InterleaveFlat[T any](iterators ...Iterator[T]) Iterator[T] {
 
 	return FromAdvance(advance)
 }
-func InterleaveFlat[T any](iterators ...Iterator[T]) Iterator[T] {
-	size := len(iterators)
-	slice := make([]T, size)
-	var zero T
-	k := 0
-	advance := func() (bool, T) {
-		if k == 0 {
-			for i, iter := range iterators {
-				if !iter.Next() {
-					return false, zero
-				}
-				slice[i] = iter.Value()
-			}
-		}
-
-		value := slice[k]
-		k = (k + 1) % size
-		return true, value
-	}
-
-	return FromAdvance(advance)
-}
 
 func Interleave[T any](iterators ...Iterator[T]) Iterator[[]T] {
 	size := len(iterators)
