@@ -26,15 +26,15 @@ func Start(start int) RangeOption {
 	}
 }
 
-func Stop(start int) RangeOption {
+func Stop(stop int) RangeOption {
 	return func(config *rangeConfig) {
-		config.stop = start
+		config.stop = stop
 	}
 }
 
-func Step(start int) RangeOption {
+func Step(step int) RangeOption {
 	return func(config *rangeConfig) {
-		config.step = start
+		config.step = step
 	}
 }
 
