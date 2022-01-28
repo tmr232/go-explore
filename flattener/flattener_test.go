@@ -12,29 +12,12 @@ To Run:
 	go build .\flattener\generate\ ; go generate .\flattener\ ; goimports -w .\flattener\generators_gen.go ; go test .\flattener\
 */
 
-//go:generate go run ./generate
-
-func generate_MyGen() int {
-	return 1
-	return 2
-	return 3
-}
-
 func TestMyGen(t *testing.T) {
 	want := []int{1, 2, 3}
 	got := itertools.ToSlice(MyGen())
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %v, want %v", got, want)
 	}
-}
-
-func generate_IfStmt(flag bool) int {
-	if flag {
-		return 1
-	} else {
-		return 2
-	}
-	return 3
 }
 
 func TestIfStmt(t *testing.T) {
@@ -54,30 +37,11 @@ func TestIfStmt(t *testing.T) {
 	})
 }
 
-func generate_AnotherIfStmt(flag bool) int {
-	return 0
-	return 1
-	if flag {
-		if flag {
-			return 2
-		}
-		return 3
-	} else {
-		return 5
-	}
-	return 4
-}
 func TestAnotherIfStmt(t *testing.T) {
 	want := []int{0, 1, 2, 3, 4}
 	got := itertools.ToSlice(AnotherIfStmt(true))
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %v, want %v", got, want)
-	}
-}
-
-func generate_RepeatOne() int {
-	for {
-		return 1
 	}
 }
 
@@ -106,30 +70,11 @@ func TestRepeatOne(t *testing.T) {
 //	}
 //}
 
-func generate_Fib() int {
-	var a int
-	var b int
-	a = 1
-	b = 1
-	for {
-		return a
-		a, b = b, a+b
-	}
-}
-
 func TestFib(t *testing.T) {
 	want := []int{1, 1, 2, 3, 5, 8, 13, 21, 34, 55}
 	got := itertools.ToSlice(itertools.Take(10, Fib()))
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %v, want %v", got, want)
-	}
-}
-
-func generate_Count() int {
-	var i int
-	for {
-		return i
-		i++
 	}
 }
 

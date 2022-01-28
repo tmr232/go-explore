@@ -423,6 +423,27 @@ func Flatten[T any](iter Iterator[Iterator[T]]) Iterator[T] {
 	}
 }
 
+// FlattenSlices removes one level of nesting in an iterator of iterators.
+func FlattenSlices[T any](iter Iterator[[]T]) Iterator[T] {
+	var current Iterator[T]
+	return &IteratorClosure[T]{
+		next: func() bool {
+			for {
+				if current != nil && current.Next() {
+					return true
+				}
+				if !iter.Next() {
+					return false
+				}
+				current = FromSlice(iter.Value())
+			}
+		},
+		value: func() T {
+			return current.Value()
+		},
+	}
+}
+
 // Tee returns a slice of n independent iterators with the same content as the input iterator.
 func Tee[T any](iter Iterator[T], n int) []Iterator[T] {
 	deques := makeSlice[deque.Deque](n, deque.NewDeque)

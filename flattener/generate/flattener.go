@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/format"
 	"go/token"
+	"go/types"
 	"golang.org/x/tools/go/packages"
 	"log"
 	"os"
@@ -199,8 +200,98 @@ func collectFuncDecls(node ast.Node, recurse bool) []*ast.FuncDecl {
 	return result
 }
 
+type Set[T comparable] struct {
+	set map[T]struct{}
+}
+
+func (set *Set[T]) Add(value T) {
+	set.set[value] = struct{}{}
+}
+
+func (set *Set[T]) Contains(value T) bool {
+	_, exists := set.set[value]
+	return exists
+}
+
+func (set *Set[T]) ExcludeSlice(slice []T) {
+	for _, value := range slice {
+		delete(set.set, value)
+	}
+}
+
+func (set Set[T]) Iter() itertools.Iterator[T] {
+	return itertools.FromSet(set.set)
+}
+
+func First[T any](first T, tail ...any) T {
+	return first
+}
+
+func Second[T any](first any, second T, tail ...any) T {
+	return second
+}
+
+func SetDifference[T comparable](a []T, b []T) (diff []T) {
+	setB := make(map[T]struct{}, len(b))
+	for _, item := range b {
+		setB[item] = struct{}{}
+	}
+	for _, item := range a {
+		if _, ok := setB[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+	return
+}
+
+func getFunctionDeclarations(typesInfo *types.Info, fdecl *ast.FuncDecl, fset *token.FileSet) {
+	// Get function scope
+	scope, exists := typesInfo.Scopes[fdecl.Type]
+	if !exists {
+		log.Fatal("No scope for function!")
+	}
+
+	// Get all parameter names
+	var paramNames []string
+	for _, field := range fdecl.Type.Params.List {
+		for _, ident := range field.Names {
+			paramNames = append(paramNames, ident.Name)
+		}
+	}
+
+	// Get all result names
+	var resultNames []string
+	for _, field := range fdecl.Type.Results.List {
+		for _, ident := range field.Names {
+			resultNames = append(resultNames, ident.Name)
+		}
+	}
+
+	// Get the names of all variables declared in the function (not including nested scopes...)
+	scopeVarNames := SetDifference(SetDifference(scope.Names(), paramNames), resultNames)
+
+	//vid := 0
+	//
+	//for childIndex := 0; childIndex < scope.NumChildren() ; childIndex++ {
+	//	child := scope.Child(childIndex)
+	//	for _, name := range child.Names() {
+	//		child.Lookup(name).
+	//	}
+	//}
+	//if scope.NumChildren() > 0 {
+	//	itertools.ForEach(itertools.FromSlice(funcDeclScope.Child(0).Names()), func(x string) { fmt.Println("___ ", x) })
+	//}
+
+	fmt.Println("Scoped Vars:", scopeVarNames)
+
+	for _, name := range scopeVarNames {
+		obj := scope.Lookup(name)
+		fmt.Println("var", name, obj.Type().String())
+	}
+}
+
 func main() {
-	pkgpath := "C:\\Code\\Personal\\go-explore\\flattener\\generate"
+	pkgpath := "C:\\Code\\Personal\\go-explore\\flattener"
 	cfg := &packages.Config{Mode: packages.NeedTypes | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedSyntax, Tests: false}
 	pkgs, err := packages.Load(cfg, pkgpath)
 	if err != nil {
@@ -220,7 +311,7 @@ func main() {
 
 	var af *ast.File
 	for _, f := range pkg.Syntax {
-		fmt.Println(f.Name.Name)
+		//fmt.Println(f.Name.Name)
 		if f.Name.Name == "main" {
 			af = f
 			break
@@ -234,21 +325,39 @@ func main() {
 
 	funcDecls := collectFuncDecls(af, false)
 
-	for key, val := range pkg.TypesInfo.Scopes {
-		switch key.(type) {
-		case *ast.FuncDecl:
-			fmt.Println(key.(*ast.FuncDecl).Name.Name, val)
-			continue
-		}
-		//fmt.Println(key, val)
-	}
+	//for key, val := range pkg.TypesInfo.Scopes {
+	//	switch key.(type) {
+	//	case *ast.FuncDecl:
+	//		fmt.Println(key.(*ast.FuncDecl).Name.Name, val)
+	//		continue
+	//	}
+	//	//fmt.Println(key, val)
+	//}
 
 	for _, fdecl := range funcDecls {
 		funcDeclScope := pkg.TypesInfo.Scopes[fdecl.Type]
 		if funcDeclScope == nil {
 			log.Fatal("Shit.")
 		}
-		fmt.Println(fdecl.Name, funcDeclScope.Names())
+
+		if !strings.HasPrefix(fdecl.Name.Name, "generate_") {
+			continue
+		}
+
+		fmt.Println("X", fdecl.Name.Name)
+		for i, param := range fdecl.Type.Params.List {
+			fmt.Println(" :  ", i, param.Names)
+		}
+		for _, name := range funcDeclScope.Names() {
+			fmt.Println("    ", name, funcDeclScope.Lookup(name))
+		}
+
+		if funcDeclScope.NumChildren() > 0 {
+			itertools.ForEach(itertools.FromSlice(funcDeclScope.Child(0).Names()), func(x string) { fmt.Println("___ ", x) })
+		}
+
+		getFunctionDeclarations(pkg.TypesInfo, fdecl, pkg.Fset)
+		//fmt.Println(fdecl.Name, funcDeclScope.Names())
 	}
 
 	var out bytes.Buffer
